@@ -9,7 +9,7 @@
 :toclevels: 6
 :toc-title:
 
-Dozens of minimal operating systems to learn x86 system programming. Tested on Ubuntu 17.10 host and <<test-hardware,real hardware>>. Userland cheat at: https://github.com/cirosantilli/x86-assembly-cheat ARM baremetal setup at: https://github.com/cirosantilli/linux-kernel-module-cheat#baremetal-setup
+Dozens of minimal operating systems to learn x86 system programming. Tested on Ubuntu 18.04 host in QEMU 2.11 and <<test-hardware,real hardware>>. Userland cheat at: https://github.com/cirosantilli/linux-kernel-module-cheat#userland-assembly ARM baremetal setup at: https://github.com/cirosantilli/linux-kernel-module-cheat#baremetal-setup
 
 :logo: logo.jpg
 link:{logo}[image:{logo}[]]
@@ -38,9 +38,14 @@ Run the default OS on QEMU:
 Run a given OS:
 
 ....
-./run min
-./run bios_one_char
+./run bios_hello_world
+./run bios_putc
 ....
+
+Examples described at:
+
+* <<bios-examples>>
+* <<bios-hello-world>>
 
 Extensions are ignored for perfect tab completion, so all the following are equivalent:
 
@@ -63,7 +68,14 @@ Then on the terminal start the simulation with:
 c
 ....
 
-https://stackoverflow.com/questions/6142925/how-can-i-use-bochs-to-run-assembly-code/32871939#32871939
+To quit Bochs either:
+
+* press the poweroff button inside its GUI
+* Ctrl + C on terminal and the type `quit` and hit enter
+
+TODO: automate this step.
+
+Bibliography: https://stackoverflow.com/questions/6142925/how-can-i-use-bochs-to-run-assembly-code/32871939#32871939
 
 === Getting started with real hardware
 
@@ -88,7 +100,25 @@ Then:
 
 When you are done, just hit the power button to shutdown.
 
-See: <<test-hardware>>
+For example, on my T430  I see the following.
+
+After turning on, this is when I have to press Enter to enter the boot menu:
+
+image::https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Lenovo_ThinkPad_T430_UEFI_BIOS_1.16_splash_screen.jpg/640px-Lenovo_ThinkPad_T430_UEFI_BIOS_1.16_splash_screen.jpg[]
+
+Then, here I have to press F12 to select the USB as the boot device:
+
+image::https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Lenovo_ThinkPad_T430_UEFI_BIOS_1.16_Startup_Interrupt_Menu.jpg/640px-Lenovo_ThinkPad_T430_UEFI_BIOS_1.16_Startup_Interrupt_Menu.jpg[]
+
+From there, I can select the USB as the boot device like this:
+
+image::https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Lenovo_ThinkPad_T430_UEFI_BIOS_1.16_Boot_Menu.jpg/640px-Lenovo_ThinkPad_T430_UEFI_BIOS_1.16_Boot_Menu.jpg[]
+
+Alternatively, to change the boot order and choose the USB to have higher precedence so I don't have to manually select it every time, I would hit F1 on the "Startup Interrupt Menu" screen, and then navigate to:
+
+image::https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Lenovo_ThinkPad_T430_UEFI_BIOS_1.16_boot_order_menu.jpg/640px-Lenovo_ThinkPad_T430_UEFI_BIOS_1.16_boot_order_menu.jpg[]
+
+See also: <<test-hardware>>
 
 ==== Getting started with the big image
 
@@ -118,27 +148,41 @@ TODO: boot sectors that load STAGE2 are not working with the big image chainload
 
 === Getting started with Docker
 
-If you don't have an Ubuntu box, this is an easy alternative:
+If you don't have an Ubuntu box, this is an easy alternative, for the first run:
 
 ....
-sudo docker run -it --net=host ubuntu:14.04 bash
+sudo docker run --interactive --tty --name xbme --net=host ubuntu:18.04 bash
+....
+
+and the following runs:
+
+....
+sudo docker start xbme
+sudo docker exec --interactive --tty xbme bash
+sudo docker stop xbme
+....
+
+and to nuke the container later on:
+
+....
+# sudo docker rm xbme
 ....
 
 Then proceed normally in the guest: install packages, and build:
 
 ....
-apt-get update
-apt-get install git
-git clone https://github.com/cirosantilli/x86-bare-metal-examples
-cd x86-bare-metal-examples
-./configure
+apt-get update && \
+apt-get install -y git && \
+git clone https://github.com/cirosantilli/x86-bare-metal-examples && \
+cd x86-bare-metal-examples && \
+./configure -y && \
 make
 ....
 
 To overcome the lack of GUI, we can use QEMU's VNC implementation instead of the default SDL, which is visible on the host due to `--net=host`:
 
 ....
-qemu-system-i386 -hda main.img -vnc :0
+./run bios_hello_world run -vnc :0
 ....
 
 and then on host:
@@ -148,17 +192,66 @@ sudo apt-get install vinagre
 vinagre localhost:5900
 ....
 
+TODO: get sound working from docker: <<pc-speaker>>: https://stackoverflow.com/questions/41083436/how-to-play-sound-in-a-docker-container
+
+It should also be possible to run a GUI inside the container, but I haven't tested: https://stackoverflow.com/questions/40658095/how-to-open-ubuntu-gui-inside-a-docker-image/57636624#57636624
+
 === GDB step debug
 
-TODO get it working nicely:
+To GDB step debug the program, run it with:
 
 ....
 ./run bios_hello_world debug
 ....
 
-This will only cover specifics, you have to know GDB debugging already.
+This will leave you at the very first instruction executed by our program, which is the beginning of our `BEGIN` macro.
 
-How to have debug symbols: https://stackoverflow.com/questions/32955887/how-to-disassemble-16-bit-x86-boot-sector-code-in-gdb-with-x-i-pc-it-gets-tr/32960272#32960272 TODO implement here. Needs to point GDB to an ELF file in addition to the remote listen.
+Note however that this is not the very first instruction QEMU executes: that will actually be BIOS setup code that runs before our program itself.
+
+You can then basically debug as you would a normal userland program, notably:
+
+* I then highly recommend that you use https://github.com/cyrus-and/gdb-dashboard[GDB Dashboard] to see what is going on.
+* `n` skips over macros
+* `ni` steps within macros. But you will need to enable the printing of assembly code on GDB Dashboard to see where you are at
+
+With this God-like GDB Dashboard setup, at 89cbe7be83f164927caebc9334bc42990e499cb1 I see a perfect program view such as:
+
+....
+ 1 /* https://github.com/cirosantilli/x86-bare-metal-examples#bios-hello-world */
+ 2
+ 3 #include "common.h"
+ 4 BEGIN
+ 5     mov $msg, %si
+ 6     mov $0x0e, %ah
+ 7 loop:
+ 8     lodsb
+ 9     or %al, %al
+10     jz halt
+11     int $0x10
+12     jmp loop
+─── Assembly ────────────────────────────────────────────────────────────────────────────
+0x00007c00 __start+0  cli
+0x00007c01 __start+1  ljmp   $0xc031,$0x7c06
+0x00007c08 __start+8  mov    %eax,%ds
+0x00007c0a __start+10 mov    %eax,%es
+0x00007c0c __start+12 mov    %eax,%fs
+0x00007c0e __start+14 mov    %eax,%gs
+0x00007c10 __start+16 mov    %eax,%ebp
+0x00007c12 __start+18 mov    %eax,%ss
+0x00007c14 __start+20 mov    %ebp,%esp
+─── Registers ───────────────────────────────────────────────────────────────────────────
+   eax 0x0000aa55    ecx 0x00000000    edx 0x00000080    ebx 0x00000000    esp 0x00006f04
+   ebp 0x00000000    esi 0x00000000    edi 0x00000000    eip 0x00007c00 eflags [ IF ]    
+    cs 0x00000000     ss 0x00000000     ds 0x00000000     es 0x00000000     fs 0x00000000
+    gs 0x00000000
+─── Stack ───────────────────────────────────────────────────────────────────────────────
+[0] from 0x00007c00 in __start+0 at bios_hello_world.S:4
+(no arguments)
+─────────────────────────────────────────────────────────────────────────────────────────
+>>>
+....
+
+Debug symbols are obtained by first linking ELF files, and then using `objcopy` on them to generate the final image. We then pass the ELF files with the debug information to GDB:  https://stackoverflow.com/questions/32955887/how-to-disassemble-16-bit-x86-boot-sector-code-in-gdb-with-x-i-pc-it-gets-tr/32960272#32960272
 
 How to step over `int` calls: http://stackoverflow.com/questions/24491516/how-to-step-over-interrupt-calls-when-debugging-a-bootloader-bios-with-gdb-and-q
 
@@ -209,6 +302,16 @@ Minimal example that just halts the CPU without using our mini-library link:comm
 Source: link:min.S[]
 
 Outcome: QEMU window opens up, prints a few firmware messages, and hangs.
+
+Here is an equivalent example using our mini-library:
+
+....
+./run template
+....
+
+Source: link:template.S[]
+
+You can use that file as a quick template to start new tests.
 
 ==== Infinite loop
 
@@ -690,6 +793,40 @@ http://www.seabios.org/SeaBIOS
 Open source x86 BIOS implementation.
 
 Default BIOS for QEMU and KVM.
+
+== No BIOS
+
+Here we will collect some examples that do stuff without using the BIOS!
+
+These tend to be less portable, not sure they will work on real hardware.
+
+Also they might need to rely on undocumented features.
+
+But they were verified in QEMU.
+
+If you are serious about this, study <<coreboot>>.
+
+=== No BIOS hello world
+
+....
+./run no_bios_hello_world
+....
+
+Source: link:no_bios_hello_world.S[]
+
+Outcome:
+
+....
+hello world
+....
+
+with red foreground and blue background shows on the top left of the cleared screen.
+
+This example uses the fact that BIOS maps video memory to address 0xB8000.
+
+We can then move 0xB800 to a segment register and use segment:offset addressing to access this memory.
+
+Then we can show characters by treating `0xB800:0000` as a `uint16_t` array, where low 8 bytes is the ASCII character, and the high 8 bytes is the color attribute of this character.
 
 == Modes of operation
 
@@ -1404,6 +1541,16 @@ TODO vs <<protected-mode>>.
 
 64-bit is the major mode of operation, and enables the full 64 bit instructions.
 
+There are currently no examples in this repo because I was lazy to make them.
+
+As someone once brilliantly put it: https://twitter.com/garybernhardt/status/1106255947138125824
+
+____
+Watching an x86-64 CPU boot is like watching an amoeba slowly evolve into a dog.
+____
+
+The backward compatibility of x86 is mind boggling.
+
 === Compatibility mode
 
 Compatibility mode emulates IA-32 and allows to run 32 and 16 bit code.
@@ -1445,6 +1592,7 @@ TODO: are there performance considerations when designing CPUs?
 
 Bibliography: http://superuser.com/questions/703695/difference-between-port-mapped-and-memory-mapped-access
 
+[[ps2-keyboard]]
 === PS/2 keyboard
 
 Whenever you press a key down or up, the keyboard hex scancode is printed to the screen:
@@ -1566,7 +1714,7 @@ Port `43h` is used to control signal properties except frequency, which goes in 
 Bibliography:
 
 * http://wiki.osdev.org/PIT
-* https//en.wikipedia.org/wiki/Intel_8253 that is the circuit ID for the PIT.
+* https://en.wikipedia.org/wiki/Intel_8253 that is the circuit ID for the PIT.
 * http://kernelx.weebly.com/programmable-interval-timer.html
 
 ==== PIT frequency
@@ -1763,7 +1911,9 @@ TODO get a hello world program working:
 
 Running without image gives the UEFI shell, and a Linux kernel image booted fine with it: link:http://unix.stackexchange.com/a/228053/32558[], so we just need to generate the image.
 
-The blob `uefi/ovmf.fd` IA32 r15214 was downloaded from: https://sourceforge.net/projects/edk2/files/OVMF/OVMF-IA32-r15214.zip/download TODO: automate building it from source instead, get rid of the blob, and force push it away from history. It seems that they have moved to GitHub at last: https://github.com/tianocore/tianocore.github.io/wiki/How-to-build-OVMF/e372aa54750838a7165b08bb02b105148e2c4190
+The blob `uefi/ovmf.fd` IA32 r15214 was downloaded from: https://sourceforge.net/projects/edk2/files/OVMF/OVMF-IA32-r15214.zip/download TODO: automate building it from source instead, get rid of the blob, and force push it away from history. Working build setup sketch: https://github.com/cirosantilli/linux-cheat/blob/b1c3740519eff18a7707de981ee3afea2051ba10/ovmf.sh
+
+It seems that they have moved to GitHub at last: https://github.com/tianocore/tianocore.github.io/wiki/How-to-build-OVMF/e372aa54750838a7165b08bb02b105148e2c4190
 
 === UEFI Bibliography
 
@@ -2013,7 +2163,60 @@ It does make it much easier to express higher level ideas, and gives portability
 
 However, it increases the complexity that one has to understand a bit, so I decided to stay away from it when I wrote this tutorial.
 
-Maybe we should just rewrite everything in C based on <<c-hello-world>>.
+But I have since change my mind, and if I ever touch this again seriously, I would rewrite it in C based on <<c-hello-world>> and Newlib: https://electronics.stackexchange.com/questions/223929/c-standard-libraries-on-bare-metal/400077#400077
+
+If this is done, we this repo should then be merged into: https://github.com/cirosantilli/linux-kernel-module-cheat/tree/87e846fc1f9c57840e143513ebd69c638bd37aa8#baremetal-setup together with the ARM Newlib baremetal setups present there.
+
+=== Serial UART
+
+What the heck is a serial in the real world: https://unix.stackexchange.com/questions/307390/what-is-the-difference-between-ttys0-ttyusb0-and-ttyama0-in-linux/367882#367882
+
+Currently all text output is done the display, and that was a newbie design choice from before I knew the serial existed. The serial is just generally more minimal and elegant than the display, and should have been used instead.
+
+....
+./run bios_serial
+cat bios_serial.tmp.serial
+....
+
+On QEMU, we see the serial output on the host terminal:
+
+....
+hello world
+....
+
+and on Bochs we redirect it to a file:
+
+....
+./run bios_serial bochs
+cat bios_serial.tmp.serial
+....
+
+Source: link:bios_serial.S[]
+
+TODO: failed attempt without BIOS:
+
+....
+./run serial
+....
+
+Source: link:serial.S[]
+
+Like every other of those old hardwares, it is impossible to find its documentation, must be rotting on some IBM mainframe that is not connected to the internet, so we go for:
+
+* OSDev: https://wiki.osdev.org/Serial_Ports
+* Samy likely just copied OSDev that for his: https://github.com/SamyPesse/How-to-Make-a-Computer-Operating-System/blob/eb30f8802fac9f0f1c28d3a96bb3d402bdfc4687/src/kernel/modules/x86serial.cc#L38
+
+Bibliography:
+
+* https://stackoverflow.com/questions/22571379/intel-galileo-bare-metal-uart
+* https://stackoverflow.com/questions/27594297/how-to-print-a-string-to-the-terminal-in-x86-64-assembly-nasm-without-syscall
+
+This would open up:
+
+* gem5 benchmarking and exploration, currently blocked on https://stackoverflow.com/questions/50364863/how-to-get-graphical-gui-output-and-user-touch-keyboard-mouse-input-in-a-ful/50364864#50364864
+* the output stays persistently on the host terminal. So we can run QEMU without a GUI, immediatily shutdown the machine it at the end, and not have to close QEMU manually all the time.
+* automated unit tests. Ha, like I'm gonna be that diligent!
+* easily working on ARM in a more uniform way to prepare for the move in to https://github.com/cirosantilli/linux-kernel-module-cheat/tree/87e846fc1f9c57840e143513ebd69c638bd37aa8#baremetal-setup
 
 === Macros vs functions
 
@@ -2076,18 +2279,6 @@ Knowing the following will help a lot:
 
 While it is possible to learn those topics as you go along, and it is almost certain that you will end up learning more about them, we will not explain them here in detail.
 
-== TODO
-
-=== Serial UART
-
-* https://stackoverflow.com/questions/22571379/intel-galileo-bare-metal-uart
-* https://stackoverflow.com/questions/27594297/how-to-print-a-string-to-the-terminal-in-x86-64-assembly-nasm-without-syscall
-
-This would open up:
-
-* gem5 benchmarking and exploration, currently blocked on https://stackoverflow.com/questions/50364863/how-to-get-graphical-gui-output-and-user-touch-keyboard-mouse-input-in-a-ful/50364864#50364864
-* automated unit tests. Ha, like I'm gonna be that dilligent!
-
 == Bibliography
 
 === Intel manual
@@ -2100,22 +2291,26 @@ This repository quotes by default the following revision: 325384-056US September
 
 Fun, educational and useless:
 
+* https://github.com/arjun024/mkeykernel, https://github.com/arjun024/mkernel
++
+Worked, but bad build system: not `Makefile` or `.gitignore`.
+
+The following did not work on my machine out of the box:
+
+* https://github.com/apparentlymart/ToyOS
+* https://github.com/rde1024/toyos
+
+==== Baremetal games
+
 * https://github.com/programble/bare-metal-tetris tested on Ubuntu 14.04. Just works.
 +
 Has Multiboot and El Torito. Uses custom linker script.
 +
 Almost entirely in C `-nostdlib`, with very few inline `asm` commands, and a small assembly entry point. So a good tutorial in how to do the bridge.
 * https://github.com/daniel-e/tetros Tetris that fits into bootloader.
-* https://github.com/arjun024/mkeykernel, https://github.com/arjun024/mkernel
-+
-Worked, but bad build system: not `Makefile` or `.gitignore`.
-* https://github.com/Overv/MineAssemble
 * https://github.com/nanochess/fbird Flappy bird in the 512-byte boot sector.
-
-The following did not work on my machine out of the box:
-
-* https://github.com/apparentlymart/ToyOS
-* https://github.com/rde1024/toyos
+* https://github.com/Overv/MineAssemble Minecraft
+* https://github.com/tsoding/pinpog Pong / Breakout
 
 === Tutorials
 
@@ -2129,6 +2324,7 @@ One complexity order above the minimal tutorials, one below actual kernels
 * http://www.xinu.cs.purdue.edu/
 * https://pdos.csail.mit.edu/6.828/2014/xv6.html
 * https://en.wikipedia.org/wiki/MINIX, influenced Linux
+* https://github.com/SerenityOS/serenity
 
 ==== Educational non-NIXes
 
@@ -2185,7 +2381,7 @@ Reviewed at: 7aff64740e1e3fba9a64c30c5cead0f88514eb62
 
 https://github.com/SamyPesse/How-to-Make-a-Computer-Operating-System
 
-Has one big source tree that goes up to multitasking and a stdlib. Kernel written C++ and stdlib in C. TODO 64-bit, ring 0 vs ring 3?
+Has one big source tree that goes up to multitasking and a stdlib. Kernel written C++ and stdlib in C. TODO check: 64-bit, ring 0 vs ring 3? `git grep rax`  has no hits, so I'm guessing no 64-bit.
 
 Build failed on Ubunbu 18.04 with: https://github.com/SamyPesse/How-to-Make-a-Computer-Operating-System/issues/127 and I didn't bother to investigate.
 

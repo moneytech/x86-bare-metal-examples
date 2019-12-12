@@ -2,6 +2,7 @@
 
 COMMON ?= common.h
 DOC_OUT = README.html
+ELF_EXT = .elf
 LD ?= ld
 LINKER_SCRIPT ?= linker.ld
 # Use gcc so that the preprocessor will run first.
@@ -10,8 +11,9 @@ GAS_EXT ?= .S
 NASM_EXT ?= .asm
 OBJ_EXT ?= .o
 OUT_EXT ?= .img
-QEMU ?= qemu-system-i386
+QEMU ?= qemu-system-i386 -drive 'file=$(RUN_FILE),format=raw' -serial mon:stdio -smp 2
 RUN ?= bios_hello_world
+RUN_ARGS ?= -soundhw pcspk
 TMP_EXT ?= .tmp
 
 OUTS := $(sort $(foreach IN_EXT,$(NASM_EXT) $(GAS_EXT),$(patsubst %$(IN_EXT),%$(OUT_EXT),$(wildcard *$(IN_EXT)))))
@@ -23,12 +25,11 @@ RUN_FILE := $(RUN)$(OUT_EXT)
 all: $(OUTS)
 
 %$(OUT_EXT): %$(OBJ_EXT) $(LINKER_SCRIPT)
-	@# Failed attempt at getting debug symbols.
-	@#$(LD) -melf_i386 -o '$(@:$(OUT_EXT)=.elf)' -T '$(LINKER_SCRIPT)' '$<'
-	$(LD) --oformat binary -o '$@' -T '$(LINKER_SCRIPT)' '$<'
+	$(LD) -melf_i386  -nostdlib -o '$(@:$(OUT_EXT)=$(ELF_EXT))' -T '$(LINKER_SCRIPT)' '$<'
+	objcopy -O binary '$(@:$(OUT_EXT)=.elf)' '$@'
 
 %$(OBJ_EXT): %$(GAS_EXT) $(COMMON)
-	$(GAS) -c -g -o '$@' '$<'
+	$(GAS) -m32 -c -ggdb3 -o '$@' '$<'
 
 %$(OUT_EXT): %$(NASM_EXT)
 	nasm -f bin -o '$@' '$<'
@@ -37,14 +38,14 @@ all: $(OUTS)
 $(COMMON):
 
 clean:
-	rm -fr '$(DOC_OUT)' *$(OBJ_EXT) *$(OUT_EXT) *$(TMP_EXT)
+	rm -fr '$(DOC_OUT)' *$(ELF_EXT) *$(OBJ_EXT) *$(OUT_EXT) *$(TMP_EXT)
 
 run: $(RUN_FILE)
-	$(QEMU) -drive 'file=$(RUN_FILE),format=raw' -smp 2 -soundhw pcspk
+	$(QEMU) $(RUN_ARGS)
 
 debug: $(RUN_FILE)
-	$(QEMU) -hda '$(RUN_FILE)' -S -s &
-	gdb -x gdb.gdb
+	$(QEMU) -S -s &
+	gdb -quiet -x gdb.gdb '$(<:$(OUT_EXT)=$(ELF_EXT))'
 
 bochs: $(RUN_FILE)
 	# Supposes size is already multiples of 512.
@@ -53,8 +54,9 @@ bochs: $(RUN_FILE)
 	CYLINDERS="$$(($$(stat -c '%s' '$(RUN_FILE)') / 512))" && \
 	bochs -qf /dev/null \
 		'ata0-master: type=disk, path="$(RUN_FILE)", mode=flat, cylinders='"$$CYLINDERS"', heads=1, spt=1' \
+		'com1: enabled=1, mode=file, dev=$(RUN).tmp.serial' \
 		'boot: disk' \
-		'display_library: sdl' \
+		'display_library: sdl2' \
 		'megs: 128'
 
 BIG_IMG_DIR := big_img$(TMP_EXT)

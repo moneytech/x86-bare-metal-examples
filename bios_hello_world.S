@@ -1,8 +1,8 @@
 /* https://github.com/cirosantilli/x86-bare-metal-examples#bios-hello-world */
 
 #include "common.h"
+
 BEGIN
-    DBG
     mov $msg, %si
     mov $0x0e, %ah
 loop:
